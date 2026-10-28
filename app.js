@@ -1,9 +1,10 @@
 // Mastermind Duel — 2-player peer-to-peer Mastermind (PeerJS / WebRTC).
-// Each player keeps their own secret and scores the opponent's guesses locally,
+// Versus: each player keeps their own secret and scores the opponent's guesses locally,
 // so the secret code never leaves the browser until the round is over.
+// Co-op: the host's browser makes a random code and referees the shared board.
 
 // Bump this (and the ?v= in index.html) on every release.
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#fd79a8', '#f1c40f',
                 '#9b59b6', '#e67e22', '#1abc9c', '#8d6e63', '#95a5a6'];
@@ -16,29 +17,37 @@ const $ = (id) => document.getElementById(id);
 let peer = null;
 let conn = null;
 let isHost = false;
-let numColors = 6;    // how many colors are in play (6–10), set by the host
-let round = 1;
+// Settings for the next game. The host is authoritative: guests send change requests,
+// the host applies them and broadcasts. `sv` versions the settings so a stale Ready is ignored.
+let mode = 'versus';
+let numColors = 6;
+let sv = 0;
+let round = 0;
 let draft = [];
 let lastSentDraft = '';
 let S = null; // per-round state
 const tickets = { me: { jub: 0, got: 0 }, them: { jub: 0, got: 0 } }; // won this session
 
-function newRound() {
+function newRound(m) {
   S = {
-    phase: 'setup',     // setup | play | over
+    mode: m,            // versus | coop (fixed for the round)
+    numColors,          // fixed for the round
+    phase: m === 'versus' ? 'setup' : 'play', // menu | setup | play | over
     secret: null,
     myReady: false,
     oppReady: false,
-    mine: [],           // my guesses at their code: {code, b, w}
-    theirs: [],         // their guesses at my code: {code, b, w}
-    myTurn: false,
+    mine: [],           // versus: my guesses at their code: {code, b, w}
+    theirs: [],         // versus: their guesses at my code: {code, b, w}
+    shared: [],         // co-op: team guesses: {code, b, w, by: 'me' | 'them'}
+    coopSecret: null,   // co-op: the random code (host only)
+    myTurn: m === 'coop' && iStart(),
     pending: false,     // waiting for feedback on my last guess
     oppSecret: null,
     oppDraft: null,     // opponent's in-progress guess, streamed live
-    result: null,       // frozen at game end: {me, them, nMine, nTheirs}
+    result: null,       // frozen at game end
     revealed: false,    // my secret has been sent to the opponent
-    wantRematch: false,
-    oppRematch: false,
+    menuReady: false,   // pressed Ready for the next game
+    oppMenuReady: false,
   };
   draft = [];
   lastSentDraft = '';
@@ -112,8 +121,9 @@ function bindConn(c) {
     history.replaceState(null, '', location.pathname);
     $('lobby').hidden = true;
     $('game').hidden = false;
-    newRound();
-    if (isHost) send({ t: 'config', numColors, version: VERSION });
+    newRound('versus');
+    S.phase = 'menu';
+    if (isHost) sendSettings();
     render();
   });
   c.on('data', onMessage);
@@ -127,10 +137,29 @@ const send = (msg) => conn && conn.open && conn.send(msg);
 
 function onMessage(msg) {
   switch (msg.t) {
-    case 'config':
+    // --- next-game settings & start ---
+    case 'settings':
+      mode = msg.mode;
       numColors = msg.numColors;
-      if (msg.version !== VERSION) S.versionMismatch = msg.version || 'old';
+      sv = msg.sv;
+      if (!S) break;
+      if (msg.version && msg.version !== VERSION) S.versionMismatch = msg.version;
+      S.menuReady = S.oppMenuReady = false;
       break;
+    case 'setreq':
+      applySettings(msg.mode, msg.numColors);
+      break;
+    case 'mready':
+      if (msg.sv === sv && inMenu()) {
+        S.oppMenuReady = true;
+        maybeBegin();
+      }
+      break;
+    case 'start':
+      startRound(msg.round);
+      break;
+
+    // --- versus ---
     case 'ready':
       S.oppReady = true;
       maybeStart();
@@ -160,15 +189,75 @@ function onMessage(msg) {
     case 'reveal':
       S.oppSecret = msg.code;
       break;
-    case 'rematch':
-      S.oppRematch = true;
-      maybeRematch();
+
+    // --- co-op (host referees) ---
+    case 'cguess':
+      addCoopRow(msg.code, 'them');
       break;
+    case 'crow': {
+      const mineRow = msg.by === 'guest';
+      if (mineRow) {
+        const last = S.shared[S.shared.length - 1];
+        last.b = msg.b;
+        last.w = msg.w;
+        S.pending = false;
+      } else {
+        S.shared.push({ code: msg.code, b: msg.b, w: msg.w, by: 'them' });
+        S.oppDraft = null;
+      }
+      S.myTurn = !mineRow;
+      checkEnd();
+      break;
+    }
   }
   render();
 }
 
 // ---------- Game flow ----------
+
+const inMenu = () => S.phase === 'menu' || (S.phase === 'over' && !finishingBlocked());
+
+function sendSettings() {
+  send({ t: 'settings', mode, numColors, sv, version: VERSION });
+}
+
+// Host only: change next-game settings and tell the guest. Any change un-readies both.
+function applySettings(m, n) {
+  mode = m;
+  numColors = n;
+  sv++;
+  S.menuReady = S.oppMenuReady = false;
+  sendSettings();
+  render();
+}
+
+function changeSetting(m, n) {
+  if (isHost) applySettings(m, n);
+  else send({ t: 'setreq', mode: m, numColors: n });
+}
+
+function pressReady() {
+  if (!inMenu() || S.menuReady) return;
+  S.menuReady = true;
+  send({ t: 'mready', sv });
+  maybeBegin();
+  render();
+}
+
+// Host only: once both are ready, start the next round for both.
+function maybeBegin() {
+  if (!isHost || !S.menuReady || !S.oppMenuReady) return;
+  send({ t: 'start', round: round + 1 });
+  startRound(round + 1);
+}
+
+function startRound(r) {
+  round = r;
+  newRound(mode);
+  if (S.mode === 'coop' && isHost) {
+    S.coopSecret = Array.from({ length: PEGS }, () => Math.floor(Math.random() * S.numColors));
+  }
+}
 
 function maybeStart() {
   if (S.myReady && S.oppReady && S.phase === 'setup') {
@@ -177,8 +266,31 @@ function maybeStart() {
   }
 }
 
+// Co-op, host only: score a team guess, record it, and mirror it to the guest.
+function addCoopRow(code, by) {
+  const fb = score(S.coopSecret, code);
+  S.shared.push({ code, ...fb, by });
+  send({ t: 'crow', code, ...fb, by: by === 'me' ? 'host' : 'guest' });
+  S.myTurn = by === 'them';
+  if (by === 'them') S.oppDraft = null;
+  checkEnd();
+}
+
 function checkEnd() {
   if (S.pending || S.phase !== 'play') return;
+  if (S.mode === 'coop') {
+    if (!solved(S.shared) && S.shared.length < MAX_GUESSES) return;
+    S.phase = 'over';
+    const won = solved(S.shared);
+    S.result = { won, n: S.shared.length };
+    if (won) { tickets.me.jub++; tickets.them.jub++; celebrate(); }
+    else { tickets.me.got++; tickets.them.got++; consolation(); }
+    if (isHost) {
+      S.oppSecret = S.coopSecret;
+      send({ t: 'reveal', code: S.coopSecret });
+    }
+    return;
+  }
   const first = iStart() ? S.mine : S.theirs;
   const second = iStart() ? S.theirs : S.mine;
   if (first.length !== second.length) return;
@@ -250,13 +362,6 @@ function consolation() {
   });
 }
 
-function maybeRematch() {
-  if (S.wantRematch && S.oppRematch) {
-    round++;
-    newRound();
-  }
-}
-
 function submit() {
   if (draft.length !== PEGS) return;
   if (S.phase === 'setup' && !S.myReady) {
@@ -265,25 +370,40 @@ function submit() {
     send({ t: 'ready' });
     maybeStart();
   } else if (canGuess()) {
-    S.mine.push({ code: draft });
-    S.pending = true;
-    send({ t: 'guess', code: draft });
+    if (S.mode === 'coop') {
+      if (isHost) addCoopRow(draft, 'me');
+      else {
+        S.shared.push({ code: draft, by: 'me' });
+        S.pending = true;
+        send({ t: 'cguess', code: draft });
+      }
+    } else {
+      S.mine.push({ code: draft });
+      S.pending = true;
+      send({ t: 'guess', code: draft });
+    }
   }
   draft = [];
   render();
 }
 
-const canGuess = () =>
-  !S.pending && !solved(S.mine) && S.mine.length < MAX_GUESSES &&
-  ((S.phase === 'play' && S.myTurn) || iMustFinish());
+const canGuess = () => {
+  if (S.pending) return false;
+  if (S.mode === 'coop') {
+    return S.phase === 'play' && S.myTurn && !solved(S.shared) && S.shared.length < MAX_GUESSES;
+  }
+  return !solved(S.mine) && S.mine.length < MAX_GUESSES &&
+    ((S.phase === 'play' && S.myTurn) || iMustFinish());
+};
 
-// After losing, the result is locked in but the loser keeps guessing until they
-// crack the code or run out — rematch unlocks only once they're done.
+// Versus: after losing, the result is locked in but the loser keeps guessing until they
+// crack the code or run out — the next game unlocks only once they're done.
 const finishing = (lost, list) => lost && !solved(list) && list.length < MAX_GUESSES;
 const iMustFinish = () =>
-  S.phase === 'over' && finishing(S.result.them && !S.result.me, S.mine);
+  S.mode === 'versus' && S.phase === 'over' && finishing(S.result.them && !S.result.me, S.mine);
 const theyMustFinish = () =>
-  S.phase === 'over' && finishing(S.result.me && !S.result.them, S.theirs);
+  S.mode === 'versus' && S.phase === 'over' && finishing(S.result.me && !S.result.them, S.theirs);
+const finishingBlocked = () => iMustFinish() || theyMustFinish();
 
 const canEdit = () => !S.disconnected && ((S.phase === 'setup' && !S.myReady) || canGuess());
 
@@ -324,11 +444,17 @@ function renderRows(container, list, live, liveCls) {
     const g = list[i];
     const isLive = live && i === list.length;
     const row = document.createElement('div');
-    row.className = 'guess-row' + (isLive ? ' ' + liveCls : '');
+    row.className = 'guess-row' + (isLive ? ' ' + liveCls : '') + (g && g.by ? ' by-' + g.by : '');
     const num = document.createElement('span');
     num.className = 'num';
     num.textContent = i + 1;
     row.append(num, pegsEl(g ? g.code : isLive ? live : null), feedbackEl(g || {}));
+    if (g && g.by) {
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = g.by === 'me' ? 'You' : 'Them';
+      row.appendChild(who);
+    }
     container.appendChild(row);
   }
 }
@@ -353,6 +479,17 @@ function statusText() {
     return [`Version mismatch (you v${VERSION}, them v${S.versionMismatch}) — both hard refresh & recreate the game`, 'lose'];
   }
   if (S.disconnected) return ['Opponent disconnected. Refresh to start a new game.', 'lose'];
+  if (S.phase === 'menu') return ['Pick a mode and colors, then both press Ready', ''];
+  if (S.mode === 'coop') {
+    if (S.phase === 'play') {
+      if (S.pending) return ['Checking your guess…', ''];
+      const n = `${S.shared.length + 1} of ${MAX_GUESSES}`;
+      return S.myTurn ? [`Your turn — team guess ${n}`, ''] : [`Partner is guessing… (team guess ${n})`, ''];
+    }
+    return S.result.won
+      ? [`Team cracked it in ${S.result.n}! +1 Jub ticket 💋 each`, 'win']
+      : ['Out of guesses — +1 Got ticket 🫂 each', 'lose'];
+  }
   if (S.phase === 'setup') {
     return S.myReady
       ? ['Waiting for opponent to lock in their code…', '']
@@ -369,7 +506,7 @@ function statusText() {
   if (me && them) return [`Draw! Both cracked it in ${nMine}.`, ''];
   if (me) {
     const wait = theyMustFinish() ? ' · Waiting for them to finish 👀' : '';
-    return [`You win in ${nMine} guess${nMine === 1 ? "" : "es"}! +1 Jub ticket 💋` + wait, 'win'];
+    return [`You win in ${nMine} guess${nMine === 1 ? '' : 'es'}! +1 Jub ticket 💋` + wait, 'win'];
   }
   if (them) {
     if (solved(S.mine)) return [`Lost, but you still cracked it in ${S.mine.length} 💪`, ''];
@@ -406,11 +543,21 @@ function render() {
     $('tickets').appendChild(group);
   });
 
-  const showOpp = S.oppSecret && !iMustFinish(); // keep it hidden while I'm still guessing
-  renderSecret($('opp-secret'), showOpp ? S.oppSecret : null, showOpp ? 'Their code' : 'Their secret');
-  renderSecret($('my-secret'), S.secret, S.secret ? 'Your code' : 'Not set');
-  renderRows($('my-rows'), S.mine, canGuess() ? draft : null, 'current');
-  renderRows($('their-rows'), S.theirs, S.phase !== 'setup' ? S.oppDraft : null, 'current live');
+  // Boards
+  const coop = S.mode === 'coop';
+  $('main-title').textContent = coop ? 'Team guesses' : 'Your guesses';
+  $('their-board').hidden = coop;
+  if (coop) {
+    renderSecret($('opp-secret'), S.oppSecret, S.oppSecret ? 'The code' : 'Secret code');
+    const partnerLive = S.phase === 'play' && !S.myTurn && !S.pending ? S.oppDraft : null;
+    renderRows($('my-rows'), S.shared, canGuess() ? draft : partnerLive, canGuess() ? 'current' : 'current live');
+  } else {
+    const showOpp = S.oppSecret && !iMustFinish(); // keep it hidden while I'm still guessing
+    renderSecret($('opp-secret'), showOpp ? S.oppSecret : null, showOpp ? 'Their code' : 'Their secret');
+    renderSecret($('my-secret'), S.secret, S.secret ? 'Your code' : 'Not set');
+    renderRows($('my-rows'), S.mine, canGuess() ? draft : null, 'current');
+    renderRows($('their-rows'), S.theirs, S.phase !== 'setup' && S.phase !== 'menu' ? S.oppDraft : null, 'current live');
+  }
 
   // Stream my in-progress guess so the opponent can watch live (never during setup — that's the secret).
   const key = draft.join(',');
@@ -421,7 +568,7 @@ function render() {
 
   // Input area
   const editable = canEdit();
-  $('input').hidden = S.phase === 'over' && !iMustFinish();
+  $('input').hidden = !(S.phase === 'setup' || S.phase === 'play' || iMustFinish());
   const d = $('draft');
   d.innerHTML = '';
   for (let i = 0; i < PEGS; i++) {
@@ -436,14 +583,22 @@ function render() {
   $('btn-submit').disabled = !editable || draft.length !== PEGS;
   $('btn-submit').textContent = S.phase === 'setup' ? 'Lock secret' : 'Guess';
 
-  // Game over
-  $('over').hidden = S.phase !== 'over';
-  const rb = $('btn-rematch');
-  const blocked = S.phase === 'over' && (iMustFinish() || theyMustFinish());
-  rb.disabled = S.wantRematch || S.disconnected || S.pending || blocked;
+  // Next-game panel: settings + Ready
+  $('next').hidden = !(S.phase === 'menu' || S.phase === 'over');
+  document.querySelectorAll('#mode-seg button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.mode === mode);
+    b.disabled = !!S.disconnected;
+  });
+  document.querySelectorAll('#colors-seg button').forEach((b) => {
+    b.classList.toggle('on', +b.dataset.n === numColors);
+    b.disabled = !!S.disconnected;
+  });
+  const rb = $('btn-ready');
+  const blocked = finishingBlocked();
+  rb.disabled = S.menuReady || S.disconnected || blocked;
   rb.textContent = blocked
-    ? (iMustFinish() ? 'Finish cracking their code to rematch' : 'Rematch after they finish…')
-    : S.wantRematch ? 'Waiting for opponent…' : S.oppRematch ? 'Opponent wants a rematch!' : 'Rematch';
+    ? (iMustFinish() ? 'Finish cracking their code first' : 'Waiting for them to finish…')
+    : S.menuReady ? 'Waiting for partner…' : S.oppMenuReady ? 'Partner is ready — Ready!' : 'Ready';
 }
 
 function lobbyMsg(text) {
@@ -454,9 +609,9 @@ function lobbyMsg(text) {
 
 function buildPalette() {
   const pal = $('palette');
-  if (pal.children.length === numColors) return;
+  if (pal.children.length === S.numColors) return;
   pal.innerHTML = '';
-  COLORS.slice(0, numColors).forEach((c, i) => {
+  COLORS.slice(0, S.numColors).forEach((c, i) => {
     const b = document.createElement('button');
     b.className = 'swatch';
     b.style.background = c;
@@ -468,16 +623,14 @@ function buildPalette() {
 
 $('btn-clear').onclick = () => { draft = []; render(); };
 $('btn-submit').onclick = submit;
-$('btn-rematch').onclick = () => {
-  S.wantRematch = true;
-  send({ t: 'rematch' });
-  maybeRematch();
-  render();
-};
-$('btn-create').onclick = () => {
-  numColors = +$('num-colors').value;
-  createGame();
-};
+$('btn-ready').onclick = pressReady;
+document.querySelectorAll('#mode-seg button').forEach((b) => {
+  b.onclick = () => changeSetting(b.dataset.mode, numColors);
+});
+document.querySelectorAll('#colors-seg button').forEach((b) => {
+  b.onclick = () => changeSetting(mode, +b.dataset.n);
+});
+$('btn-create').onclick = createGame;
 $('join-form').onsubmit = (e) => { e.preventDefault(); joinGame($('join-code').value); };
 $('btn-copy').onclick = () => {
   navigator.clipboard.writeText($('share-link').value).then(() => {
@@ -490,7 +643,7 @@ document.addEventListener('keydown', (e) => {
   if ($('game').hidden || !S || !canEdit()) return;
   const n = parseInt(e.key, 10);
   const idx = n === 0 ? 9 : n - 1;
-  if (!isNaN(n) && idx < numColors && draft.length < PEGS) { draft.push(idx); render(); }
+  if (!isNaN(n) && idx < S.numColors && draft.length < PEGS) { draft.push(idx); render(); }
   else if (e.key === 'Backspace') { draft.pop(); render(); }
   else if (e.key === 'Enter') submit();
 });

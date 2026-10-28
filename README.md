@@ -5,13 +5,14 @@ A flat, minimal 2-player online Mastermind game. It's pure static HTML/CSS/JS. T
 ## Play
 
 1. One player clicks **Create game** and sends the link to the other player.
-2. Each player locks in a secret 4-color code (repeats allowed).
-3. Take turns guessing each other's code, with up to 10 guesses each.
-   - ● dark = right color, right spot
-   - ○ light = right color, wrong spot
-4. The fewest guesses wins. The second player always gets an equal number of turns, so a tie is possible.
+2. Before each game, pick a **mode** and the **number of colors** (6–10), then both press **Ready**. Either player can change the settings, and any change un-readies both players.
+3. Feedback: ● dark = right color, right spot · ○ light = right color, wrong spot.
 
-Keyboard: `1`–`6` pick colors, `Backspace` removes the last one, and `Enter` submits.
+**⚔️ Versus:** each player locks in a secret 4-color code, then you take turns guessing each other's code, with up to 10 guesses each. The fewest guesses wins, and the second player always gets an equal number of turns. The winner gets a Jub ticket 💋 and the loser gets a Got ticket 🫂. The loser keeps guessing until they crack the code or run out of guesses, and only then can the next game start.
+
+**🤝 Co-op:** the game picks a random code, and you take turns cracking it together on one shared board, with 10 guesses for the team. If you crack it, you each get a Jub ticket 💋. If you run out, you each get a Got ticket 🫂.
+
+Keyboard: `1`–`9` and `0` pick colors, `Backspace` removes the last one, and `Enter` submits.
 
 ## Host on GitHub Pages
 

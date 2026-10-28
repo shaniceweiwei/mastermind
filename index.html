@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mastermind Duel</title>
-  <link rel="stylesheet" href="style.css?v=1.0.1">
+  <link rel="stylesheet" href="style.css?v=1.1.0">
 </head>
 <body>
   <header>
@@ -13,16 +13,9 @@
 
   <!-- Lobby -->
   <main id="lobby" class="card">
-    <p class="lead">Crack your friend's secret code before they crack yours.</p>
+    <p class="lead">Race your friend to crack each other's code, or team up to crack one together.</p>
     <div id="lobby-start">
-      <div class="row">
-        <label class="colors-pick">Colors
-          <select id="num-colors">
-            <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
-          </select>
-        </label>
-        <button id="btn-create" class="btn primary">Create game</button>
-      </div>
+      <button id="btn-create" class="btn primary">Create game</button>
       <div class="or">or join with a code</div>
       <form id="join-form" class="row">
         <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off">
@@ -41,10 +34,10 @@
     <details class="rules">
       <summary>How to play</summary>
       <ul>
-        <li>Each player secretly picks 4 colors (repeats allowed). The room creator chooses 6–10 colors — more colors, harder game.</li>
-        <li>Take turns guessing your opponent's code. You get 10 guesses.</li>
+        <li>Codes are 4 colors (repeats allowed). Before each game pick 6–10 colors — more colors, harder game.</li>
         <li><span class="dot black"></span> right color, right spot · <span class="dot white"></span> right color, wrong spot.</li>
-        <li>Fewest guesses wins. The second player always gets an equal number of turns.</li>
+        <li><b>Versus:</b> each player sets a secret code, then you take turns guessing each other's. Fewest guesses wins; the second player always gets an equal number of turns.</li>
+        <li><b>Co-op:</b> the game makes a random code and you take turns cracking it together — 10 guesses for the team.</li>
       </ul>
     </details>
   </main>
@@ -56,11 +49,11 @@
 
     <div class="boards">
       <section class="card board">
-        <h2>Your guesses</h2>
+        <h2 id="main-title">Your guesses</h2>
         <div class="secret-row" id="opp-secret"></div>
         <div id="my-rows"></div>
       </section>
-      <section class="card board">
+      <section class="card board" id="their-board">
         <h2>Their guesses</h2>
         <div class="secret-row" id="my-secret"></div>
         <div id="their-rows"></div>
@@ -76,14 +69,28 @@
       </div>
     </div>
 
-    <div id="over" class="card over row" hidden>
-      <button id="btn-rematch" class="btn primary">Rematch</button>
+    <div id="next" class="card next" hidden>
+      <h2>Next game</h2>
+      <div class="setting">
+        <span>Mode</span>
+        <div class="seg" id="mode-seg">
+          <button data-mode="versus">⚔️ Versus</button>
+          <button data-mode="coop">🤝 Co-op</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span>Colors</span>
+        <div class="seg" id="colors-seg">
+          <button data-n="6">6</button><button data-n="7">7</button><button data-n="8">8</button><button data-n="9">9</button><button data-n="10">10</button>
+        </div>
+      </div>
+      <button id="btn-ready" class="btn primary">Ready</button>
     </div>
   </main>
 
   <footer id="version" class="version"></footer>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="app.js?v=1.0.1"></script>
+  <script src="app.js?v=1.1.0"></script>
 </body>
 </html>

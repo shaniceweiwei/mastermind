@@ -288,3 +288,28 @@ input:focus { border-color: var(--ink); }
 .swatch { color: rgba(255, 255, 255, 0.85); font-weight: 700; font-size: 13px; }
 
 .version { text-align: center; margin-top: 24px; font-size: 12px; color: var(--muted); }
+
+/* Next-game panel: mode + colors + ready */
+.next { margin-top: 16px; text-align: center; }
+.setting { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.setting > span { font-weight: 600; font-size: 14px; color: var(--muted); width: 52px; text-align: right; }
+.seg { display: inline-flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+#btn-ready { margin-top: 4px; min-width: 180px; }
+
+/* Co-op: who made each team guess */
+.guess-row .who { font-size: 11px; font-weight: 700; width: 34px; text-align: right; color: var(--muted); }
+.guess-row.by-me .who { color: #2980b9; }
+.guess-row.by-them .who { color: #e67e22; }
