@@ -3,7 +3,7 @@
 // so the secret code never leaves the browser until the round is over.
 
 // Bump this (and the ?v= in index.html) on every release.
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#fd79a8', '#f1c40f',
                 '#9b59b6', '#e67e22', '#1abc9c', '#8d6e63', '#95a5a6'];
@@ -279,10 +279,11 @@ const canGuess = () =>
 
 // After losing, the result is locked in but the loser keeps guessing until they
 // crack the code or run out — rematch unlocks only once they're done.
-const finishing = (lost, list) =>
-  S.phase === 'over' && lost && !solved(list) && list.length < MAX_GUESSES;
-const iMustFinish = () => finishing(S.result.them && !S.result.me, S.mine);
-const theyMustFinish = () => finishing(S.result.me && !S.result.them, S.theirs);
+const finishing = (lost, list) => lost && !solved(list) && list.length < MAX_GUESSES;
+const iMustFinish = () =>
+  S.phase === 'over' && finishing(S.result.them && !S.result.me, S.mine);
+const theyMustFinish = () =>
+  S.phase === 'over' && finishing(S.result.me && !S.result.them, S.theirs);
 
 const canEdit = () => !S.disconnected && ((S.phase === 'setup' && !S.myReady) || canGuess());
 
@@ -368,7 +369,7 @@ function statusText() {
   if (me && them) return [`Draw! Both cracked it in ${nMine}.`, ''];
   if (me) {
     const wait = theyMustFinish() ? ' · Waiting for them to finish 👀' : '';
-    return [`You win in ${nMine} guesses! +1 Jub ticket 💋` + wait, 'win'];
+    return [`You win in ${nMine} guess${nMine === 1 ? "" : "es"}! +1 Jub ticket 💋` + wait, 'win'];
   }
   if (them) {
     if (solved(S.mine)) return [`Lost, but you still cracked it in ${S.mine.length} 💪`, ''];
