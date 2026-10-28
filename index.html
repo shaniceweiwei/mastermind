@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mastermind Duel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Mastermind<span>Duel</span></h1>
+  </header>
+
+  <!-- Lobby -->
+  <main id="lobby" class="card">
+    <p class="lead">Crack your friend's secret code before they crack yours.</p>
+    <div id="lobby-start">
+      <button id="btn-create" class="btn primary">Create game</button>
+      <div class="or">or join with a code</div>
+      <form id="join-form" class="row">
+        <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off">
+        <button class="btn">Join</button>
+      </form>
+    </div>
+    <div id="lobby-wait" hidden>
+      <p>Send this link to your friend:</p>
+      <div class="row">
+        <input id="share-link" readonly>
+        <button id="btn-copy" class="btn">Copy</button>
+      </div>
+      <p class="muted">Room code: <b id="room-code"></b> · waiting for opponent…</p>
+    </div>
+    <p id="lobby-msg" class="muted"></p>
+    <details class="rules">
+      <summary>How to play</summary>
+      <ul>
+        <li>Each player secretly picks 4 colors (repeats allowed).</li>
+        <li>Take turns guessing your opponent's code. You get 10 guesses.</li>
+        <li><span class="dot black"></span> right color, right spot · <span class="dot white"></span> right color, wrong spot.</li>
+        <li>Fewest guesses wins. The second player always gets an equal number of turns.</li>
+      </ul>
+    </details>
+  </main>
+
+  <!-- Game -->
+  <main id="game" hidden>
+    <div id="status" class="status"></div>
+
+    <div class="boards">
+      <section class="card board">
+        <h2>Your guesses</h2>
+        <div class="secret-row" id="opp-secret"></div>
+        <div id="my-rows"></div>
+      </section>
+      <section class="card board">
+        <h2>Their guesses</h2>
+        <div class="secret-row" id="my-secret"></div>
+        <div id="their-rows"></div>
+      </section>
+    </div>
+
+    <div id="input" class="card input">
+      <div id="draft" class="pegs big"></div>
+      <div id="palette" class="palette"></div>
+      <div class="row">
+        <button id="btn-clear" class="btn">Clear</button>
+        <button id="btn-submit" class="btn primary">Submit</button>
+      </div>
+    </div>
+
+    <div id="over" class="card over" hidden>
+      <button id="btn-rematch" class="btn primary">Rematch</button>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
