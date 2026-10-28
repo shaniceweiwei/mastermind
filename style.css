@@ -146,3 +146,77 @@ input:focus { border-color: var(--ink); }
 }
 .swatch:hover { transform: translateY(-2px); }
 .swatch:disabled { opacity: 0.35; transform: none; cursor: default; }
+
+/* Win celebration */
+.celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(44, 62, 80, 0.55);
+  cursor: pointer;
+  animation: fade-in 0.2s ease-out;
+}
+.celebrate-text {
+  font-size: clamp(36px, 10vw, 84px);
+  font-weight: 900;
+  color: #fff;
+  background: #27ae60;
+  padding: 12px 28px;
+  border-radius: 18px;
+  text-align: center;
+  animation: pop 0.6s cubic-bezier(.2, 1.6, .4, 1) both, wiggle 1.2s ease-in-out 0.6s infinite;
+}
+.celebrate i {
+  position: absolute;
+  top: -20px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  animation-name: fall;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop {
+  from { transform: scale(0) rotate(-12deg); opacity: 0; }
+  to { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-3deg) scale(1); }
+  50% { transform: rotate(3deg) scale(1.06); }
+}
+@keyframes fall {
+  to { transform: translate(var(--drift), 110vh) rotate(720deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .celebrate-text { animation: none; }
+  .celebrate i { display: none; }
+}
+
+/* Jub tickets */
+.tickets { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+.ticket {
+  --notch: 8px;
+  background: #fd79a8;
+  color: #fff;
+  font-weight: 700;
+  padding: 8px 20px;
+  border-radius: 6px;
+  /* ticket notches on both sides */
+  -webkit-mask: radial-gradient(circle var(--notch) at left center, #0000 98%, #000) left / 51% 100% no-repeat,
+                radial-gradient(circle var(--notch) at right center, #0000 98%, #000) right / 51% 100% no-repeat;
+          mask: radial-gradient(circle var(--notch) at left center, #0000 98%, #000) left / 51% 100% no-repeat,
+                radial-gradient(circle var(--notch) at right center, #0000 98%, #000) right / 51% 100% no-repeat;
+}
+.ticket.empty { background: #b2bec3; }
+
+.celebrate-stack { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.celebrate-ticket {
+  --notch: 12px;
+  font-size: clamp(20px, 5vw, 32px);
+  padding: 14px 36px;
+  animation: pop 0.6s cubic-bezier(.2, 1.6, .4, 1) 0.5s both;
+}

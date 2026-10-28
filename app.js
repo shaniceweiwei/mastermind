@@ -15,6 +15,7 @@ let isHost = false;
 let round = 1;
 let draft = [];
 let S = null; // per-round state
+const tickets = { me: 0, them: 0 }; // Jub tickets won this session
 
 function newRound() {
   S = {
@@ -164,7 +165,38 @@ function checkEnd() {
   if (solved(first) || solved(second) || first.length >= MAX_GUESSES) {
     S.phase = 'over';
     send({ t: 'reveal', code: S.secret });
+    const me = solved(S.mine), them = solved(S.theirs);
+    if (me && !them) { tickets.me++; celebrate(); }
+    if (them && !me) tickets.them++;
   }
+}
+
+function celebrate() {
+  const overlay = document.createElement('div');
+  overlay.className = 'celebrate';
+  const text = document.createElement('div');
+  text.className = 'celebrate-text';
+  text.textContent = 'teerak geng maak!';
+  const ticket = document.createElement('div');
+  ticket.className = 'ticket celebrate-ticket';
+  ticket.textContent = '+1 Jub ticket 💋';
+  const stack = document.createElement('div');
+  stack.className = 'celebrate-stack';
+  stack.append(text, ticket);
+  overlay.appendChild(stack);
+  for (let i = 0; i < 80; i++) {
+    const bit = document.createElement('i');
+    bit.style.left = Math.random() * 100 + 'vw';
+    bit.style.background = COLORS[i % COLORS.length];
+    bit.style.animationDelay = Math.random() * 0.8 + 's';
+    bit.style.animationDuration = 2 + Math.random() * 1.5 + 's';
+    bit.style.setProperty('--drift', (Math.random() * 200 - 100) + 'px');
+    overlay.appendChild(bit);
+  }
+  const close = () => overlay.remove();
+  overlay.onclick = close;
+  setTimeout(close, 4000);
+  document.body.appendChild(overlay);
 }
 
 function maybeRematch() {
@@ -270,8 +302,8 @@ function statusText() {
   }
   const me = solved(S.mine), them = solved(S.theirs);
   if (me && them) return [`Draw! Both cracked it in ${S.mine.length}.`, ''];
-  if (me) return [`You win in ${S.mine.length} guesses! 🎉`, 'win'];
-  if (them) return [`You lose — they cracked it in ${S.theirs.length}.`, 'lose'];
+  if (me) return [`You win in ${S.mine.length} guesses! +1 Jub ticket 💋`, 'win'];
+  if (them) return [`You lose — they cracked it in ${S.theirs.length} and get a Jub ticket 💋`, 'lose'];
   return ['Draw — nobody cracked the code.', ''];
 }
 
@@ -281,6 +313,15 @@ function render() {
   const status = $('status');
   status.textContent = text;
   status.className = 'status ' + cls;
+
+  $('tickets').innerHTML = '';
+  [['You', tickets.me], ['Them', tickets.them]].forEach(([who, n]) => {
+    const t = document.createElement('div');
+    t.className = 'ticket' + (n ? '' : ' empty');
+    t.textContent = `${who}: 💋 ×${n}`;
+    t.title = 'Jub tickets';
+    $('tickets').appendChild(t);
+  });
 
   renderSecret($('opp-secret'), S.oppSecret, S.oppSecret ? 'Their code' : 'Their secret');
   renderSecret($('my-secret'), S.secret, S.secret ? 'Your code' : 'Not set');
