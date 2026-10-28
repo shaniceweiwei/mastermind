@@ -12,17 +12,13 @@ const $ = (id) => document.getElementById(id);
 
 let peer = null;
 let conn = null;
-let online = false;   // data connection to the opponent is up
-let isHost = false;   // I'm the one registered under the room's peer id (can change on reconnect)
-let p1 = false;       // stable seat: player 1 starts odd rounds
-let roomCode = '';
-let numColors = 6;    // how many colors are in play (6–10), set by the room creator
+let isHost = false;
+let numColors = 6;    // how many colors are in play (6–10), set by the host
 let round = 1;
 let draft = [];
 let lastSentDraft = '';
-let lastSeen = 0;
 let S = null; // per-round state
-let tickets = { me: { jub: 0, got: 0 }, them: { jub: 0, got: 0 } };
+const tickets = { me: { jub: 0, got: 0 }, them: { jub: 0, got: 0 } }; // won this session
 
 function newRound() {
   S = {
@@ -45,8 +41,8 @@ function newRound() {
   lastSentDraft = '';
 }
 
-// Player 1 starts odd rounds, player 2 starts even rounds.
-const iStart = () => (round % 2 === 1) === p1;
+// Host starts odd rounds, guest starts even rounds.
+const iStart = () => (round % 2 === 1) === isHost;
 
 function score(secret, guess) {
   let b = 0;
@@ -70,151 +66,67 @@ function randomCode() {
   return Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
-// The game is saved per room so a refresh (or coming back later) can pick up where it left off.
-const storeKey = () => 'mmduel:' + roomCode;
-
-function save() {
-  try { localStorage.setItem(storeKey(), JSON.stringify({ S, round, p1, tickets, numColors })); } catch {}
-}
-
-function load() {
-  try {
-    const d = JSON.parse(localStorage.getItem(storeKey()));
-    if (d && d.S) ({ S, round, p1, tickets } = d);
-    if (d && d.numColors) numColors = d.numColors;
-  } catch {}
-}
-
-function enterRoom(code, create) {
-  roomCode = code.trim().toUpperCase();
-  if (!roomCode) return;
-  history.replaceState(null, '', `${location.pathname}?room=${roomCode}`);
-  $('share-link').value = location.href;
-  $('room-code').textContent = roomCode;
-  load();
-  if (S) { showGame(); render(); }
-  create ? host() : join();
-}
-
-function resetPeer() {
-  if (peer) peer.destroy();
-  peer = null;
-}
-
-// Register under the room id and wait for the opponent. If the id is taken, someone
-// is already hosting — join them instead.
-function host() {
-  resetPeer();
+function createGame() {
   isHost = true;
-  lobbyMsg('Opening room…');
-  peer = new Peer(PEER_PREFIX + roomCode);
+  const code = randomCode();
+  lobbyMsg('Creating room…');
+  peer = new Peer(PEER_PREFIX + code);
   peer.on('open', () => {
+    const link = `${location.origin}${location.pathname}?room=${code}`;
+    $('share-link').value = link;
+    $('room-code').textContent = code;
     $('lobby-start').hidden = true;
     $('lobby-wait').hidden = false;
     lobbyMsg('');
   });
-  peer.on('connection', bindConn);
-  peer.on('disconnected', () => peer && !peer.destroyed && peer.reconnect());
+  peer.on('connection', (c) => {
+    if (conn) { c.on('open', () => c.close()); return; }
+    bindConn(c);
+  });
   peer.on('error', (err) => {
-    if (err.type === 'unavailable-id') setTimeout(join, 1500);
-    else lobbyMsg('Connection error: ' + err.type);
+    if (err.type === 'unavailable-id') { peer.destroy(); createGame(); return; }
+    lobbyMsg('Connection error: ' + err.type);
   });
 }
 
-// Connect to whoever hosts the room. If nobody does (e.g. they refreshed), host it ourselves.
-function join() {
-  resetPeer();
+function joinGame(code) {
   isHost = false;
-  lobbyMsg('Connecting to room ' + roomCode + '…');
+  code = code.trim().toUpperCase();
+  if (!code) return;
+  lobbyMsg('Connecting to room ' + code + '…');
   peer = new Peer();
-  peer.on('open', () => bindConn(peer.connect(PEER_PREFIX + roomCode, { reliable: true })));
+  peer.on('open', () => bindConn(peer.connect(PEER_PREFIX + code, { reliable: true })));
   peer.on('error', (err) => {
-    if (err.type === 'peer-unavailable') setTimeout(host, 500);
-    else lobbyMsg('Connection error: ' + err.type);
+    lobbyMsg(err.type === 'peer-unavailable'
+      ? 'Room not found. Check the code or ask your friend for a new link.'
+      : 'Connection error: ' + err.type);
   });
 }
 
 function bindConn(c) {
   c.on('open', () => {
-    const old = conn;
     conn = c;
-    if (old) old.close(); // a rejoin replaces a stale connection
-    online = true;
-    lastSeen = Date.now();
-    lastSentDraft = null;
-    send({ t: 'hello', fresh: !S, round, p1, tickets, numColors });
+    history.replaceState(null, '', location.pathname);
+    $('lobby').hidden = true;
+    $('game').hidden = false;
+    newRound();
+    if (isHost) send({ t: 'config', numColors });
+    render();
   });
-  c.on('data', (msg) => {
-    if (c !== conn) return;
-    lastSeen = Date.now();
-    onMessage(msg);
+  c.on('data', onMessage);
+  c.on('close', () => {
+    if (S) S.disconnected = true;
+    render();
   });
-  c.on('close', () => { if (c === conn) dropped(); });
 }
-
-function dropped() {
-  conn = null;
-  online = false;
-  render();
-  // The host keeps listening; a guest goes back to join-or-host until the opponent is back.
-  if (!isHost) setTimeout(() => { if (!conn) join(); }, 1500);
-}
-
-// Heartbeat: notice a vanished opponent even when WebRTC doesn't report the close.
-// Generous timeout because browsers throttle timers in background tabs to ~1/min.
-setInterval(() => {
-  if (!conn) return;
-  if (Date.now() - lastSeen > 75000) { const c = conn; dropped(); c.close(); return; }
-  send({ t: 'ping' });
-}, 5000);
-
-// Close cleanly on refresh/leave so the opponent notices right away.
-window.addEventListener('pagehide', () => conn && conn.close());
 
 const send = (msg) => conn && conn.open && conn.send(msg);
 
-function showGame() {
-  $('lobby').hidden = true;
-  $('game').hidden = false;
-}
-
-const swapTickets = (t) => ({ me: t.them, them: t.me });
-
-function onHello(h) {
-  if (!S && h.fresh) {
-    // Brand-new game.
-    p1 = isHost;
-    if (!isHost) numColors = h.numColors; // the room host's choice wins
-    round = 1;
-    newRound();
-  } else if (!S) {
-    // I lost my saved game (new device / cleared storage): take the opponent's side of it
-    // and start a fresh round, since my old secret is gone.
-    p1 = !h.p1;
-    numColors = h.numColors;
-    round = h.round + 1;
-    tickets = swapTickets(h.tickets);
-    newRound();
-  } else if (h.fresh) {
-    // Opponent lost their game — start a fresh round together.
-    round++;
-    newRound();
-  } else {
-    // Both still have the game: catch up on anything sent while disconnected.
-    if (h.round > round) { round = h.round; newRound(); } // they advanced on my rematch
-    if (S.myReady) send({ t: 'ready' });
-    if (S.pending) send({ t: 'guess', code: S.mine[S.mine.length - 1].code, n: S.mine.length - 1 });
-    if (S.revealed) send({ t: 'reveal', code: S.secret });
-    if (S.wantRematch) send({ t: 'rematch', round });
-  }
-  showGame();
-}
-
 function onMessage(msg) {
-  if (msg.t === 'ping') return;
-  if (msg.t === 'hello') { onHello(msg); render(); return; }
-  if (!S) return;
   switch (msg.t) {
+    case 'config':
+      numColors = msg.numColors;
+      break;
     case 'ready':
       S.oppReady = true;
       maybeStart();
@@ -223,21 +135,17 @@ function onMessage(msg) {
       S.oppDraft = msg.code;
       break;
     case 'guess': {
-      // Already scored (resent after a reconnect)? Just resend that feedback.
-      const old = S.theirs[msg.n];
-      if (old) { send({ t: 'feedback', b: old.b, w: old.w, n: msg.n }); break; }
       S.oppDraft = null;
       const fb = score(S.secret, msg.code);
       S.theirs.push({ code: msg.code, ...fb });
-      send({ t: 'feedback', ...fb, n: msg.n });
+      send({ t: 'feedback', ...fb });
       S.myTurn = true;
       checkEnd();
       maybeReveal();
       break;
     }
     case 'feedback': {
-      if (!S.pending || msg.n !== S.mine.length - 1) break;
-      const last = S.mine[msg.n];
+      const last = S.mine[S.mine.length - 1];
       last.b = msg.b;
       last.w = msg.w;
       S.pending = false;
@@ -249,7 +157,6 @@ function onMessage(msg) {
       S.oppSecret = msg.code;
       break;
     case 'rematch':
-      if (msg.round !== round) break;
       S.oppRematch = true;
       maybeRematch();
       break;
@@ -356,7 +263,7 @@ function submit() {
   } else if (canGuess()) {
     S.mine.push({ code: draft });
     S.pending = true;
-    send({ t: 'guess', code: draft, n: S.mine.length - 1 });
+    send({ t: 'guess', code: draft });
   }
   draft = [];
   render();
@@ -373,7 +280,7 @@ const finishing = (lost, list) =>
 const iMustFinish = () => finishing(S.result.them && !S.result.me, S.mine);
 const theyMustFinish = () => finishing(S.result.me && !S.result.them, S.theirs);
 
-const canEdit = () => online && ((S.phase === 'setup' && !S.myReady) || canGuess());
+const canEdit = () => !S.disconnected && ((S.phase === 'setup' && !S.myReady) || canGuess());
 
 // ---------- Rendering ----------
 
@@ -437,7 +344,7 @@ function renderSecret(container, code, label) {
 }
 
 function statusText() {
-  if (!online) return [`Waiting for opponent to (re)join room ${roomCode}…`, 'lose'];
+  if (S.disconnected) return ['Opponent disconnected. Refresh to start a new game.', 'lose'];
   if (S.phase === 'setup') {
     return S.myReady
       ? ['Waiting for opponent to lock in their code…', '']
@@ -469,7 +376,6 @@ function statusText() {
 
 function render() {
   if (!S) return;
-  save();
   const [text, cls] = statusText();
   const status = $('status');
   status.textContent = text;
@@ -526,7 +432,7 @@ function render() {
   $('over').hidden = S.phase !== 'over';
   const rb = $('btn-rematch');
   const blocked = S.phase === 'over' && (iMustFinish() || theyMustFinish());
-  rb.disabled = S.wantRematch || !online || S.pending || blocked;
+  rb.disabled = S.wantRematch || S.disconnected || S.pending || blocked;
   rb.textContent = blocked
     ? (iMustFinish() ? 'Finish cracking their code to rematch' : 'Rematch after they finish…')
     : S.wantRematch ? 'Waiting for opponent…' : S.oppRematch ? 'Opponent wants a rematch!' : 'Rematch';
@@ -556,15 +462,15 @@ $('btn-clear').onclick = () => { draft = []; render(); };
 $('btn-submit').onclick = submit;
 $('btn-rematch').onclick = () => {
   S.wantRematch = true;
-  send({ t: 'rematch', round });
+  send({ t: 'rematch' });
   maybeRematch();
   render();
 };
 $('btn-create').onclick = () => {
   numColors = +$('num-colors').value;
-  enterRoom(randomCode(), true);
+  createGame();
 };
-$('join-form').onsubmit = (e) => { e.preventDefault(); enterRoom($('join-code').value, false); };
+$('join-form').onsubmit = (e) => { e.preventDefault(); joinGame($('join-code').value); };
 $('btn-copy').onclick = () => {
   navigator.clipboard.writeText($('share-link').value).then(() => {
     $('btn-copy').textContent = 'Copied!';
@@ -584,5 +490,5 @@ document.addEventListener('keydown', (e) => {
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) {
   $('join-code').value = roomParam;
-  enterRoom(roomParam, false);
+  joinGame(roomParam);
 }
