@@ -15,7 +15,7 @@ let isHost = false;
 let round = 1;
 let draft = [];
 let S = null; // per-round state
-const tickets = { me: 0, them: 0 }; // Jub tickets won this session
+const tickets = { me: { jub: 0, got: 0 }, them: { jub: 0, got: 0 } }; // won this session
 
 function newRound() {
   S = {
@@ -166,37 +166,59 @@ function checkEnd() {
     S.phase = 'over';
     send({ t: 'reveal', code: S.secret });
     const me = solved(S.mine), them = solved(S.theirs);
-    if (me && !them) { tickets.me++; celebrate(); }
-    if (them && !me) tickets.them++;
+    if (me && !them) { tickets.me.jub++; tickets.them.got++; celebrate(); }
+    if (them && !me) { tickets.them.jub++; tickets.me.got++; consolation(); }
   }
 }
 
-function celebrate() {
+function showOverlay(cls, message, ticketText, ticketCls, makeBit) {
   const overlay = document.createElement('div');
-  overlay.className = 'celebrate';
+  overlay.className = 'celebrate ' + cls;
   const text = document.createElement('div');
   text.className = 'celebrate-text';
-  text.textContent = 'teerak geng maak!';
+  text.textContent = message;
   const ticket = document.createElement('div');
-  ticket.className = 'ticket celebrate-ticket';
-  ticket.textContent = '+1 Jub ticket 💋';
+  ticket.className = 'ticket celebrate-ticket ' + ticketCls;
+  ticket.textContent = ticketText;
   const stack = document.createElement('div');
   stack.className = 'celebrate-stack';
+  if (cls === 'hug') {
+    const hug = document.createElement('div');
+    hug.className = 'hug-emoji';
+    hug.textContent = '🫂';
+    stack.appendChild(hug);
+  }
   stack.append(text, ticket);
   overlay.appendChild(stack);
-  for (let i = 0; i < 80; i++) {
-    const bit = document.createElement('i');
+  for (let i = 0; i < 40; i++) {
+    const bit = makeBit(i);
     bit.style.left = Math.random() * 100 + 'vw';
-    bit.style.background = COLORS[i % COLORS.length];
-    bit.style.animationDelay = Math.random() * 0.8 + 's';
+    bit.style.animationDelay = Math.random() * 1.2 + 's';
     bit.style.animationDuration = 2 + Math.random() * 1.5 + 's';
     bit.style.setProperty('--drift', (Math.random() * 200 - 100) + 'px');
     overlay.appendChild(bit);
   }
   const close = () => overlay.remove();
   overlay.onclick = close;
-  setTimeout(close, 4000);
+  setTimeout(close, 4500);
   document.body.appendChild(overlay);
+}
+
+function celebrate() {
+  showOverlay('win', 'teerak geng maak!', '+1 Jub ticket 💋', '', (i) => {
+    const bit = document.createElement('i');
+    bit.style.background = COLORS[i % COLORS.length];
+    return bit;
+  });
+}
+
+function consolation() {
+  showOverlay('hug', 'mai bpen rai~ got na~', '+1 Got ticket 🫂', 'got', () => {
+    const bit = document.createElement('span');
+    bit.className = 'heart';
+    bit.textContent = '💜';
+    return bit;
+  });
 }
 
 function maybeRematch() {
@@ -303,7 +325,7 @@ function statusText() {
   const me = solved(S.mine), them = solved(S.theirs);
   if (me && them) return [`Draw! Both cracked it in ${S.mine.length}.`, ''];
   if (me) return [`You win in ${S.mine.length} guesses! +1 Jub ticket 💋`, 'win'];
-  if (them) return [`You lose — they cracked it in ${S.theirs.length} and get a Jub ticket 💋`, 'lose'];
+  if (them) return [`You lose — they cracked it in ${S.theirs.length}. +1 Got ticket 🫂`, 'lose'];
   return ['Draw — nobody cracked the code.', ''];
 }
 
@@ -315,12 +337,20 @@ function render() {
   status.className = 'status ' + cls;
 
   $('tickets').innerHTML = '';
-  [['You', tickets.me], ['Them', tickets.them]].forEach(([who, n]) => {
-    const t = document.createElement('div');
-    t.className = 'ticket' + (n ? '' : ' empty');
-    t.textContent = `${who}: 💋 ×${n}`;
-    t.title = 'Jub tickets';
-    $('tickets').appendChild(t);
+  [['You', tickets.me], ['Them', tickets.them]].forEach(([who, t]) => {
+    const group = document.createElement('div');
+    group.className = 'ticket-group';
+    const label = document.createElement('span');
+    label.textContent = who;
+    group.appendChild(label);
+    [['jub', '💋', 'Jub tickets'], ['got', '🫂', 'Got tickets']].forEach(([kind, icon, title]) => {
+      const el = document.createElement('div');
+      el.className = 'ticket ' + kind + (t[kind] ? '' : ' empty');
+      el.textContent = `${icon} ×${t[kind]}`;
+      el.title = title;
+      group.appendChild(el);
+    });
+    $('tickets').appendChild(group);
   });
 
   renderSecret($('opp-secret'), S.oppSecret, S.oppSecret ? 'Their code' : 'Their secret');
