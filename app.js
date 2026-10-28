@@ -14,6 +14,7 @@ let conn = null;
 let isHost = false;
 let round = 1;
 let draft = [];
+let lastSentDraft = '';
 let S = null; // per-round state
 const tickets = { me: { jub: 0, got: 0 }, them: { jub: 0, got: 0 } }; // won this session
 
@@ -28,10 +29,12 @@ function newRound() {
     myTurn: false,
     pending: false,     // waiting for feedback on my last guess
     oppSecret: null,
+    oppDraft: null,     // opponent's in-progress guess, streamed live
     wantRematch: false,
     oppRematch: false,
   };
   draft = [];
+  lastSentDraft = '';
 }
 
 // Host starts odd rounds, guest starts even rounds.
@@ -120,7 +123,11 @@ function onMessage(msg) {
       S.oppReady = true;
       maybeStart();
       break;
+    case 'draft':
+      S.oppDraft = msg.code;
+      break;
     case 'guess': {
+      S.oppDraft = null;
       const fb = score(S.secret, msg.code);
       S.theirs.push({ code: msg.code, ...fb });
       send({ t: 'feedback', ...fb });
@@ -279,16 +286,18 @@ function feedbackEl(g) {
   return fb;
 }
 
-function renderRows(container, list, isCurrent) {
+// `live` is an in-progress guess shown in the next empty row (null = none).
+function renderRows(container, list, live, liveCls) {
   container.innerHTML = '';
   for (let i = 0; i < MAX_GUESSES; i++) {
     const g = list[i];
+    const isLive = live && i === list.length;
     const row = document.createElement('div');
-    row.className = 'guess-row' + (isCurrent && i === list.length ? ' current' : '');
+    row.className = 'guess-row' + (isLive ? ' ' + liveCls : '');
     const num = document.createElement('span');
     num.className = 'num';
     num.textContent = i + 1;
-    row.append(num, pegsEl(g && g.code), feedbackEl(g || {}));
+    row.append(num, pegsEl(g ? g.code : isLive ? live : null), feedbackEl(g || {}));
     container.appendChild(row);
   }
 }
@@ -355,8 +364,15 @@ function render() {
 
   renderSecret($('opp-secret'), S.oppSecret, S.oppSecret ? 'Their code' : 'Their secret');
   renderSecret($('my-secret'), S.secret, S.secret ? 'Your code' : 'Not set');
-  renderRows($('my-rows'), S.mine, canGuess());
-  renderRows($('their-rows'), S.theirs, false);
+  renderRows($('my-rows'), S.mine, canGuess() ? draft : null, 'current');
+  renderRows($('their-rows'), S.theirs, S.phase === 'play' ? S.oppDraft : null, 'current live');
+
+  // Stream my in-progress guess so the opponent can watch live (never during setup — that's the secret).
+  const key = draft.join(',');
+  if (canGuess() && key !== lastSentDraft) {
+    lastSentDraft = key;
+    send({ t: 'draft', code: draft });
+  }
 
   // Input area
   const editable = canEdit();
