@@ -24,6 +24,10 @@ git push -u origin main
 
 Then in the repo go to **Settings → Pages → Source: Deploy from a branch → `main` / root**. Your game will be at `https://<you>.github.io/mastermind/`.
 
+## Rejoining
+
+If either player refreshes, loses connection or closes the tab, open the same link or enter the same room code to come back. The game is saved in your browser, so you continue where you left off, with the same round, guesses and tickets. If one player comes back on a different device, there's no saved game there, so a fresh round starts (the tickets are kept).
+
 ## Notes
 
 - Each player's secret stays in their own browser. Guesses are scored locally and only the feedback is sent, so nobody can peek at the other player's code with devtools.
