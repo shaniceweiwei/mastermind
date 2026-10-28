@@ -4,9 +4,9 @@
 // Co-op: the host's browser makes a random code and referees the shared board.
 
 // Bump this (and the ?v= in index.html) on every release.
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 
-const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#fd79a8', '#f1c40f',
+const COLORS = ['#e74c3c', '#3498db', '#1e1e1e', '#fd79a8', '#f1c40f',
                 '#9b59b6', '#e67e22', '#1abc9c', '#8d6e63', '#95a5a6'];
 const PEGS = 4;
 const MAX_GUESSES = 10;
