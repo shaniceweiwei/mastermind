@@ -2,8 +2,8 @@
 // Each player keeps their own secret and scores the opponent's guesses locally,
 // so the secret code never leaves the browser until the round is over.
 
-const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6',
-                '#e67e22', '#1abc9c', '#fd79a8', '#8d6e63', '#95a5a6'];
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#fd79a8', '#f1c40f',
+                '#9b59b6', '#e67e22', '#1abc9c', '#8d6e63', '#95a5a6'];
 const PEGS = 4;
 const MAX_GUESSES = 10;
 const PEER_PREFIX = 'mmduel-';
