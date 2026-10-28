@@ -272,3 +272,5 @@ input:focus { border-color: var(--ink); }
 .guess-row.live .peg:not([style]) { box-shadow: inset 0 0 0 2px #f5cba7; }
 .guess-row.live .peg[style] { animation: pop 0.25s ease-out; }
 @keyframes live-pulse { 50% { background: #ffe8cc; } }
+
+.over { flex-wrap: wrap; }

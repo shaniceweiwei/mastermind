@@ -30,6 +30,10 @@ function newRound() {
     pending: false,     // waiting for feedback on my last guess
     oppSecret: null,
     oppDraft: null,     // opponent's in-progress guess, streamed live
+    result: null,       // frozen at game end: {me, them, nMine, nTheirs}
+    bonus: false,       // loser chose to keep guessing after the round was decided
+    gaveUp: false,      // loser chose to reveal the code instead
+    oppBonus: false,
     wantRematch: false,
     oppRematch: false,
   };
@@ -147,6 +151,9 @@ function onMessage(msg) {
     case 'reveal':
       S.oppSecret = msg.code;
       break;
+    case 'bonus':
+      S.oppBonus = true;
+      break;
     case 'rematch':
       S.oppRematch = true;
       maybeRematch();
@@ -165,7 +172,7 @@ function maybeStart() {
 }
 
 function checkEnd() {
-  if (S.pending) return;
+  if (S.pending || S.phase !== 'play') return;
   const first = iStart() ? S.mine : S.theirs;
   const second = iStart() ? S.theirs : S.mine;
   if (first.length !== second.length) return;
@@ -173,6 +180,7 @@ function checkEnd() {
     S.phase = 'over';
     send({ t: 'reveal', code: S.secret });
     const me = solved(S.mine), them = solved(S.theirs);
+    S.result = { me, them, nMine: S.mine.length, nTheirs: S.theirs.length };
     if (me && !them) { tickets.me.jub++; tickets.them.got++; celebrate(); }
     if (them && !me) { tickets.them.jub++; tickets.me.got++; consolation(); }
   }
@@ -252,7 +260,13 @@ function submit() {
 }
 
 const canGuess = () =>
-  S.phase === 'play' && S.myTurn && !S.pending && !solved(S.mine) && S.mine.length < MAX_GUESSES;
+  !S.pending && !solved(S.mine) && S.mine.length < MAX_GUESSES &&
+  ((S.phase === 'play' && S.myTurn) || (S.bonus && canBonus()));
+
+// After losing, the round result is locked in but you may keep guessing just for fun.
+const canBonus = () =>
+  S.phase === 'over' && S.result.them && !S.result.me && !S.gaveUp &&
+  !solved(S.mine) && S.mine.length < MAX_GUESSES;
 
 const canEdit = () => !S.disconnected && ((S.phase === 'setup' && !S.myReady) || canGuess());
 
@@ -331,10 +345,19 @@ function statusText() {
     if (S.myTurn) return [`Your turn — guess ${S.mine.length + 1} of ${MAX_GUESSES}`, ''];
     return ['Opponent is guessing…', ''];
   }
-  const me = solved(S.mine), them = solved(S.theirs);
-  if (me && them) return [`Draw! Both cracked it in ${S.mine.length}.`, ''];
-  if (me) return [`You win in ${S.mine.length} guesses! +1 Jub ticket 💋`, 'win'];
-  if (them) return [`You lose — they cracked it in ${S.theirs.length}. +1 Got ticket 🫂`, 'lose'];
+  const { me, them, nMine, nTheirs } = S.result;
+  if (me && them) return [`Draw! Both cracked it in ${nMine}.`, ''];
+  if (me) {
+    const watching = S.oppBonus && !solved(S.theirs) && S.theirs.length < MAX_GUESSES;
+    return [`You win in ${nMine} guesses! +1 Jub ticket 💋` + (watching ? ' · They\'re still trying 👀' : ''), 'win'];
+  }
+  if (them) {
+    if (S.bonus && solved(S.mine)) return [`Lost, but you still cracked it in ${S.mine.length} 💪`, ''];
+    if (S.bonus && canBonus()) {
+      return [S.pending ? 'Checking your guess…' : `Just for fun — guess ${S.mine.length + 1} of ${MAX_GUESSES}`, ''];
+    }
+    return [`You lose — they cracked it in ${nTheirs}. +1 Got ticket 🫂`, 'lose'];
+  }
   return ['Draw — nobody cracked the code.', ''];
 }
 
@@ -362,10 +385,11 @@ function render() {
     $('tickets').appendChild(group);
   });
 
-  renderSecret($('opp-secret'), S.oppSecret, S.oppSecret ? 'Their code' : 'Their secret');
+  const showOpp = S.oppSecret && !canBonus(); // keep it hidden while the loser may still guess
+  renderSecret($('opp-secret'), showOpp ? S.oppSecret : null, showOpp ? 'Their code' : 'Their secret');
   renderSecret($('my-secret'), S.secret, S.secret ? 'Your code' : 'Not set');
   renderRows($('my-rows'), S.mine, canGuess() ? draft : null, 'current');
-  renderRows($('their-rows'), S.theirs, S.phase === 'play' ? S.oppDraft : null, 'current live');
+  renderRows($('their-rows'), S.theirs, S.phase !== 'setup' ? S.oppDraft : null, 'current live');
 
   // Stream my in-progress guess so the opponent can watch live (never during setup — that's the secret).
   const key = draft.join(',');
@@ -376,7 +400,7 @@ function render() {
 
   // Input area
   const editable = canEdit();
-  $('input').hidden = S.phase === 'over';
+  $('input').hidden = S.phase === 'over' && !(S.bonus && canBonus());
   const d = $('draft');
   d.innerHTML = '';
   for (let i = 0; i < PEGS; i++) {
@@ -393,7 +417,9 @@ function render() {
   // Game over
   $('over').hidden = S.phase !== 'over';
   const rb = $('btn-rematch');
-  rb.disabled = S.wantRematch || S.disconnected;
+  rb.disabled = S.wantRematch || S.disconnected || S.pending;
+  $('btn-bonus').hidden = !(S.phase === 'over' && canBonus() && !S.bonus) || S.disconnected;
+  $('btn-giveup').hidden = !(S.phase === 'over' && canBonus());
   rb.textContent = S.wantRematch ? 'Waiting for opponent…' : S.oppRematch ? 'Opponent wants a rematch!' : 'Rematch';
 }
 
@@ -417,6 +443,17 @@ $('btn-rematch').onclick = () => {
   S.wantRematch = true;
   send({ t: 'rematch' });
   maybeRematch();
+  render();
+};
+$('btn-bonus').onclick = () => {
+  S.bonus = true;
+  send({ t: 'bonus' });
+  render();
+};
+$('btn-giveup').onclick = () => {
+  S.gaveUp = true;
+  draft = [];
+  send({ t: 'draft', code: null }); // clear my live row on their board
   render();
 };
 $('btn-create').onclick = createGame;
