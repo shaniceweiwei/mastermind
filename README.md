@@ -28,3 +28,12 @@ Then in the repo go to **Settings → Pages → Source: Deploy from a branch →
 
 - Each player's secret stays in their own browser. Guesses are scored locally and only the feedback is sent, so nobody can peek at the other player's code with devtools.
 - PeerJS's free public server is used only for the initial handshake. On some strict corporate or mobile networks a direct WebRTC connection can fail. If that happens, try a different network.
+
+## Releasing a new version
+
+Bump the version in **two places** so browsers fetch the new files and players can tell versions apart:
+
+1. `VERSION` at the top of `app.js`
+2. The `?v=` suffix on `style.css` and `app.js` in `index.html`
+
+The version shows at the bottom of the page. If the two players' versions don't match, the game shows a warning.

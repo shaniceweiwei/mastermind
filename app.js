@@ -2,6 +2,9 @@
 // Each player keeps their own secret and scores the opponent's guesses locally,
 // so the secret code never leaves the browser until the round is over.
 
+// Bump this (and the ?v= in index.html) on every release.
+const VERSION = '1.0.0';
+
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#fd79a8', '#f1c40f',
                 '#9b59b6', '#e67e22', '#1abc9c', '#8d6e63', '#95a5a6'];
 const PEGS = 4;
@@ -110,7 +113,7 @@ function bindConn(c) {
     $('lobby').hidden = true;
     $('game').hidden = false;
     newRound();
-    if (isHost) send({ t: 'config', numColors });
+    if (isHost) send({ t: 'config', numColors, version: VERSION });
     render();
   });
   c.on('data', onMessage);
@@ -126,6 +129,7 @@ function onMessage(msg) {
   switch (msg.t) {
     case 'config':
       numColors = msg.numColors;
+      if (msg.version !== VERSION) S.versionMismatch = msg.version || 'old';
       break;
     case 'ready':
       S.oppReady = true;
@@ -344,6 +348,9 @@ function renderSecret(container, code, label) {
 }
 
 function statusText() {
+  if (S.versionMismatch) {
+    return [`Version mismatch (you v${VERSION}, them v${S.versionMismatch}) — both hard refresh & recreate the game`, 'lose'];
+  }
   if (S.disconnected) return ['Opponent disconnected. Refresh to start a new game.', 'lose'];
   if (S.phase === 'setup') {
     return S.myReady
@@ -486,6 +493,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Backspace') { draft.pop(); render(); }
   else if (e.key === 'Enter') submit();
 });
+
+$('version').textContent = 'v' + VERSION;
 
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) {
