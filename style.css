@@ -274,3 +274,15 @@ input:focus { border-color: var(--ink); }
 @keyframes live-pulse { 50% { background: #ffe8cc; } }
 
 .over { flex-wrap: wrap; }
+
+/* Color-count picker + numbered swatches */
+.colors-pick { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.colors-pick select {
+  font: inherit;
+  padding: 9px 10px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.swatch { color: rgba(255, 255, 255, 0.85); font-weight: 700; font-size: 13px; }

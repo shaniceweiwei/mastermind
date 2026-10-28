@@ -15,7 +15,14 @@
   <main id="lobby" class="card">
     <p class="lead">Crack your friend's secret code before they crack yours.</p>
     <div id="lobby-start">
-      <button id="btn-create" class="btn primary">Create game</button>
+      <div class="row">
+        <label class="colors-pick">Colors
+          <select id="num-colors">
+            <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+          </select>
+        </label>
+        <button id="btn-create" class="btn primary">Create game</button>
+      </div>
       <div class="or">or join with a code</div>
       <form id="join-form" class="row">
         <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off">
@@ -34,7 +41,7 @@
     <details class="rules">
       <summary>How to play</summary>
       <ul>
-        <li>Each player secretly picks 4 colors (repeats allowed).</li>
+        <li>Each player secretly picks 4 colors (repeats allowed). The room creator chooses 6–10 colors — more colors, harder game.</li>
         <li>Take turns guessing your opponent's code. You get 10 guesses.</li>
         <li><span class="dot black"></span> right color, right spot · <span class="dot white"></span> right color, wrong spot.</li>
         <li>Fewest guesses wins. The second player always gets an equal number of turns.</li>

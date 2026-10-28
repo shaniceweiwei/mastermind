@@ -2,7 +2,8 @@
 // Each player keeps their own secret and scores the opponent's guesses locally,
 // so the secret code never leaves the browser until the round is over.
 
-const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6',
+                '#e67e22', '#1abc9c', '#fd79a8', '#8d6e63', '#95a5a6'];
 const PEGS = 4;
 const MAX_GUESSES = 10;
 const PEER_PREFIX = 'mmduel-';
@@ -15,6 +16,7 @@ let online = false;   // data connection to the opponent is up
 let isHost = false;   // I'm the one registered under the room's peer id (can change on reconnect)
 let p1 = false;       // stable seat: player 1 starts odd rounds
 let roomCode = '';
+let numColors = 6;    // how many colors are in play (6–10), set by the room creator
 let round = 1;
 let draft = [];
 let lastSentDraft = '';
@@ -72,13 +74,14 @@ function randomCode() {
 const storeKey = () => 'mmduel:' + roomCode;
 
 function save() {
-  try { localStorage.setItem(storeKey(), JSON.stringify({ S, round, p1, tickets })); } catch {}
+  try { localStorage.setItem(storeKey(), JSON.stringify({ S, round, p1, tickets, numColors })); } catch {}
 }
 
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(storeKey()));
     if (d && d.S) ({ S, round, p1, tickets } = d);
+    if (d && d.numColors) numColors = d.numColors;
   } catch {}
 }
 
@@ -139,7 +142,7 @@ function bindConn(c) {
     online = true;
     lastSeen = Date.now();
     lastSentDraft = null;
-    send({ t: 'hello', fresh: !S, round, p1, tickets });
+    send({ t: 'hello', fresh: !S, round, p1, tickets, numColors });
   });
   c.on('data', (msg) => {
     if (c !== conn) return;
@@ -181,12 +184,14 @@ function onHello(h) {
   if (!S && h.fresh) {
     // Brand-new game.
     p1 = isHost;
+    if (!isHost) numColors = h.numColors; // the room host's choice wins
     round = 1;
     newRound();
   } else if (!S) {
     // I lost my saved game (new device / cleared storage): take the opponent's side of it
     // and start a fresh round, since my old secret is gone.
     p1 = !h.p1;
+    numColors = h.numColors;
     round = h.round + 1;
     tickets = swapTickets(h.tickets);
     newRound();
@@ -511,6 +516,7 @@ function render() {
     p.onclick = () => { if (editable && draft[i] != null) { draft.splice(i, 1); render(); } };
     d.appendChild(p);
   }
+  buildPalette();
   document.querySelectorAll('.swatch').forEach((s) => (s.disabled = !editable || draft.length >= PEGS));
   $('btn-clear').disabled = !editable || draft.length === 0;
   $('btn-submit').disabled = !editable || draft.length !== PEGS;
@@ -532,13 +538,19 @@ function lobbyMsg(text) {
 
 // ---------- Wire up ----------
 
-COLORS.forEach((c, i) => {
-  const b = document.createElement('button');
-  b.className = 'swatch';
-  b.style.background = c;
-  b.onclick = () => { if (draft.length < PEGS) { draft.push(i); render(); } };
-  $('palette').appendChild(b);
-});
+function buildPalette() {
+  const pal = $('palette');
+  if (pal.children.length === numColors) return;
+  pal.innerHTML = '';
+  COLORS.slice(0, numColors).forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.style.background = c;
+    b.textContent = (i + 1) % 10; // keyboard shortcut: 1–9, 0
+    b.onclick = () => { if (draft.length < PEGS) { draft.push(i); render(); } };
+    pal.appendChild(b);
+  });
+}
 
 $('btn-clear').onclick = () => { draft = []; render(); };
 $('btn-submit').onclick = submit;
@@ -548,7 +560,10 @@ $('btn-rematch').onclick = () => {
   maybeRematch();
   render();
 };
-$('btn-create').onclick = () => enterRoom(randomCode(), true);
+$('btn-create').onclick = () => {
+  numColors = +$('num-colors').value;
+  enterRoom(randomCode(), true);
+};
 $('join-form').onsubmit = (e) => { e.preventDefault(); enterRoom($('join-code').value, false); };
 $('btn-copy').onclick = () => {
   navigator.clipboard.writeText($('share-link').value).then(() => {
@@ -560,7 +575,8 @@ $('btn-copy').onclick = () => {
 document.addEventListener('keydown', (e) => {
   if ($('game').hidden || !S || !canEdit()) return;
   const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= COLORS.length && draft.length < PEGS) { draft.push(n - 1); render(); }
+  const idx = n === 0 ? 9 : n - 1;
+  if (!isNaN(n) && idx < numColors && draft.length < PEGS) { draft.push(idx); render(); }
   else if (e.key === 'Backspace') { draft.pop(); render(); }
   else if (e.key === 'Enter') submit();
 });
